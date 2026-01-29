@@ -1,0 +1,306 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Advanced Smart Traffic AI Simulator</title>
+
+<style>
+/* ================= GLOBAL ================= */
+body {
+  margin: 0;
+  font-family: "Segoe UI", sans-serif;
+  background: linear-gradient(135deg,#0b1220,#111827);
+  color: #e5e7eb;
+}
+
+header {
+  padding: 14px;
+  text-align: center;
+  background: #020617;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.6);
+}
+
+#main {
+  display: flex;
+  height: calc(100vh - 70px);
+}
+
+/* ================= LEFT PANEL ================= */
+#panel {
+  width: 360px;
+  padding: 16px;
+  background: #020617cc;
+  overflow-y: auto;
+}
+
+.metric, .stage {
+  background: #020617aa;
+  padding: 10px;
+  border-radius: 8px;
+  margin-bottom: 10px;
+  font-size: 14px;
+}
+
+.stage { border-left: 4px solid #38bdf8; }
+
+button {
+  width: 100%;
+  padding: 10px;
+  margin: 6px 0;
+  border: none;
+  border-radius: 8px;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+.toggle { background: linear-gradient(135deg,#60a5fa,#2563eb); }
+
+/* ================= INTERSECTION ================= */
+#intersection {
+  position: relative;
+  width: 640px;
+  height: 640px;
+  margin: auto;
+  background: #1f2937;
+  overflow: hidden;
+}
+
+/* ROADS */
+.roadV {
+  position: absolute;
+  left: 260px;
+  width: 120px;
+  height: 100%;
+  background: #374151;
+}
+.roadH {
+  position: absolute;
+  top: 260px;
+  height: 120px;
+  width: 100%;
+  background: #374151;
+}
+
+/* LANE MARKS */
+.laneMarkV {
+  position:absolute; left:320px; width:4px; height:100%;
+  background: repeating-linear-gradient(
+    to bottom, #9ca3af, #9ca3af 12px, transparent 12px, transparent 24px);
+}
+.laneMarkH {
+  position:absolute; top:320px; height:4px; width:100%;
+  background: repeating-linear-gradient(
+    to right, #9ca3af, #9ca3af 12px, transparent 12px, transparent 24px);
+}
+
+/* SIGNALS */
+.signal {
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  background: darkred;
+  position: absolute;
+}
+.green { background:#22c55e; box-shadow:0 0 10px #22c55e; }
+
+#sigN{top:230px;left:310px;}
+#sigS{top:394px;left:310px;}
+#sigE{left:394px;top:310px;}
+#sigW{left:230px;top:310px;}
+
+/* VEHICLES */
+.vehicle {
+  position:absolute;
+  width:40px;
+  height:18px;
+  border-radius:4px;
+  transition: all 1.6s linear;
+  box-shadow:0 4px 8px rgba(0,0,0,0.4);
+}
+.sedan{background:linear-gradient(135deg,#60a5fa,#2563eb);}
+.suv{background:linear-gradient(135deg,#34d399,#059669);}
+.bus{background:linear-gradient(135deg,#fbbf24,#d97706);width:60px;}
+
+.window {
+  position:absolute; top:3px; left:10px;
+  width:18px; height:7px;
+  background:rgba(255,255,255,0.6);
+}
+
+.wheel {
+  position:absolute; bottom:-3px;
+  width:6px;height:6px;border-radius:50%;
+  background:#020617;
+}
+.w1{left:6px;} .w2{right:6px;}
+
+/* AMBULANCE */
+.ambulance { background:white; border:2px solid red; }
+.light {
+  position:absolute; top:-6px; left:16px;
+  width:6px;height:6px;
+  background:red;border-radius:50%;
+  animation:blink .6s infinite;
+}
+@keyframes blink{50%{opacity:0;}}
+
+/* RAIN / NIGHT */
+.night { filter: brightness(0.75); }
+.rain::after {
+  content:"";
+  position:absolute;
+  inset:0;
+  background:
+    repeating-linear-gradient(
+      120deg,
+      rgba(255,255,255,0.15),
+      rgba(255,255,255,0.15) 2px,
+      transparent 2px,
+      transparent 8px);
+  pointer-events:none;
+}
+</style>
+</head>
+
+<body>
+
+<header>
+<h2>🚦 Advanced Smart Traffic AI Simulator</h2>
+<p>Multi-Lane • Turning Logic • Weather • AI Score</p>
+</header>
+
+<div id="main">
+
+<!-- LEFT PANEL -->
+<div id="panel">
+  <div class="stage">Stage 1–2: Camera detects lane-wise queues</div>
+  <div class="stage">Stage 3: AI optimizes signals</div>
+  <div class="stage">Stage 4–5: Live deployment + learning</div>
+
+  <button class="toggle" onclick="toggleNight()">🌙 Toggle Night</button>
+  <button class="toggle" onclick="toggleRain()">🌧 Toggle Rain</button>
+
+  <div class="metric" id="density"></div>
+  <div class="metric" id="aiStatus">AI running…</div>
+  <div class="metric" id="score">AI Efficiency: 100%</div>
+</div>
+
+<!-- INTERSECTION -->
+<div id="intersection">
+  <div class="roadV"></div>
+  <div class="roadH"></div>
+  <div class="laneMarkV"></div>
+  <div class="laneMarkH"></div>
+
+  <div id="sigN" class="signal"></div>
+  <div id="sigS" class="signal"></div>
+  <div id="sigE" class="signal"></div>
+  <div id="sigW" class="signal"></div>
+</div>
+
+</div>
+
+<script>
+/* ================= DATA ================= */
+const lanes={
+  N:[[],[]], S:[[],[]], E:[[],[]], W:[[],[]]
+};
+let processed=0, totalWait=0;
+let rain=false;
+
+/* ================= SPAWN ================= */
+function spawnVehicle(){
+  const dirs=["N","S","E","W"];
+  const types=["sedan","suv","bus"];
+  const dir=dirs[Math.floor(Math.random()*4)];
+  const lane=Math.floor(Math.random()*2);
+  const turn=["left","straight","right"][Math.floor(Math.random()*3)];
+
+  const v=document.createElement("div");
+  v.className="vehicle "+types[Math.floor(Math.random()*3)];
+  v.turn=turn; v.dir=dir;
+  v.startTime=Date.now();
+
+  v.innerHTML='<div class="window"></div><div class="wheel w1"></div><div class="wheel w2"></div>';
+
+  const offset=lane===0?-20:20;
+  if(dir==="N"){v.style.top="0";v.style.left=300+offset+"px";}
+  if(dir==="S"){v.style.top="620px";v.style.left=300+offset+"px";}
+  if(dir==="E"){v.style.left="620px";v.style.top=300+offset+"px";}
+  if(dir==="W"){v.style.left="0";v.style.top=300+offset+"px";}
+
+  intersection.appendChild(v);
+  lanes[dir][lane].push(v);
+}
+setInterval(spawnVehicle, rain?1600:1200);
+
+/* ================= AI ================= */
+function chooseLane(){
+  let max={dir:null,lane:0,count:0};
+  for(let d in lanes)
+    lanes[d].forEach((l,i)=>{
+      if(l.length>max.count){max={dir:d,lane:i,count:l.length};}
+    });
+  aiStatus.innerText="AI clearing "+max.dir+" lane "+(max.lane+1);
+  return max;
+}
+
+function moveVehicle(v){
+  v.style.top="310px"; v.style.left="310px";
+  setTimeout(()=>{
+    if(v.turn==="left") v.style.left="0";
+    else if(v.turn==="right") v.style.left="620px";
+    else if(v.dir==="N") v.style.top="620px";
+    else if(v.dir==="S") v.style.top="0";
+  },800);
+
+  setTimeout(()=>{
+    totalWait+=Date.now()-v.startTime;
+    processed++;
+    v.remove();
+    updateScore();
+  },1600+(rain?400:0));
+}
+
+function step(){
+  const c=chooseLane();
+  if(!c.dir || !lanes[c.dir][c.lane].length) return;
+  setSignals(c.dir);
+  moveVehicle(lanes[c.dir][c.lane].shift());
+  updateDensity();
+}
+setInterval(step,1800);
+
+/* ================= UI ================= */
+function setSignals(active){
+  ["N","S","E","W"].forEach(d=>{
+    document.getElementById("sig"+d).className="signal"+(d===active?" green":"");
+  });
+}
+
+function updateDensity(){
+  density.innerHTML=
+    `N:${lanes.N[0].length+lanes.N[1].length} |
+     S:${lanes.S[0].length+lanes.S[1].length}<br>
+     E:${lanes.E[0].length+lanes.E[1].length} |
+     W:${lanes.W[0].length+lanes.W[1].length}`;
+}
+
+function updateScore(){
+  const avg=totalWait/processed;
+  let score=Math.max(0,100-(avg/100));
+  document.getElementById("score").innerText=
+    "AI Efficiency: "+score.toFixed(1)+"%";
+}
+
+/* ================= MODES ================= */
+function toggleNight(){
+  intersection.classList.toggle("night");
+}
+function toggleRain(){
+  rain=!rain;
+  intersection.classList.toggle("rain");
+}
+</script>
+
+</body>
+</html>
